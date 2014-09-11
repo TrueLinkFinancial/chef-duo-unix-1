@@ -7,9 +7,9 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,32 +17,48 @@
 # limitations under the License.
 #
 
+include_recipe "apt"
+include_recipe "ssh"
+
 case node[:platform]
 when "debian", "ubuntu"
-	package "libssl-dev" do
-		action :upgrade
-	end
-	package "make" do
-		action :upgrade
-	end
-end
+  if node['duo_unix']['use_package'] == false
+    package "libssl-dev" do
+      action :upgrade
+    end
+    package "make" do
+      action :upgrade
+    end
 
-#install duo_unix from source
-configure_options = node['duo_unix']['configure_options'].join(" ")
-version = node['duo_unix']['version']
-remote_file "#{Chef::Config[:file_cache_path]}/duo_unix-#{version}.tar.gz" do
-  source "#{node['duo_unix']['url']}#{version}.tar.gz"
-  checksum node['duo_unix']['checksum']
-  mode "0644"
-end
+    #install duo_unix from source
+    configure_options = node['duo_unix']['configure_options'].join(" ")
+    version = node['duo_unix']['version']
+    remote_file "#{Chef::Config[:file_cache_path]}/duo_unix-#{version}.tar.gz" do
+      source "#{node['duo_unix']['url']}#{version}.tar.gz"
+      checksum node['duo_unix']['checksum']
+      mode "0644"
+    end
 
-bash "build-and-install-duo_unix" do
-  cwd Chef::Config[:file_cache_path]
-  code <<-EOF
-  tar -xzvf duo_unix-#{version}.tar.gz
-  (cd duo_unix-#{version} && ./configure #{configure_options})
-  (cd duo_unix-#{version} && make && make install)
-  EOF
+    bash "build-and-install-duo_unix" do
+      cwd Chef::Config[:file_cache_path]
+      code <<-EOF
+      tar -xzvf duo_unix-#{version}.tar.gz
+      (cd duo_unix-#{version} && ./configure #{configure_options})
+      (cd duo_unix-#{version} && make && make install)
+      EOF
+    end
+
+  else
+    apt_repository "duo_unix" do
+      uri "http://pkg.duosecurity.com/Ubuntu"
+      distribution node['lsb']['codename']
+      components ["main"]
+      keyserver "keyserver.ubuntu.com"
+      key "15D32EFC"
+    end
+
+    package 'duo-unix'
+  end
 end
 
 #set up the config file
@@ -57,14 +73,14 @@ end
 ssh_config "ForceCommand" do
   string "ForceCommand /usr/sbin/login_duo"
   action :add
-  only_if { node['duo_unix']['conf']['login_duo_enabled'] == true } 
+  only_if { node['duo_unix']['conf']['login_duo_enabled'] == true }
 end
 
 #disable login_duo for ssh
 ssh_config "ForceCommand" do
   string "ForceCommand /usr/sbin/login_duo"
   action :remove
-  only_if { node['duo_unix']['conf']['login_duo_enabled'] == false } 
+  only_if { node['duo_unix']['conf']['login_duo_enabled'] == false }
 end
 
 #adds PermitTunnel setting to sshd_config
